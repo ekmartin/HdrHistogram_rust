@@ -216,7 +216,7 @@ extern crate base64;
 use std::fmt::Write;
 use std::{fmt, io, ops, str, time};
 
-use nom::{double, is_digit, ErrorKind, IResult};
+use nom::{double, is_digit, Context, Err, ErrorKind, IResult};
 
 use super::super::{Counter, Histogram};
 use super::Serializer;
@@ -633,14 +633,14 @@ impl<'a> Iterator for IntervalLogIterator<'a> {
 
             // Look for magic comments first otherwise they will get matched by the simple comment
             // parser
-            if let IResult::Done(rest, e) = log_entry(self.input) {
+            if let Ok((rest, e)) = log_entry(self.input) {
                 self.input = rest;
                 return Some(Ok(e));
             }
 
             // it wasn't a log entry; try parsing a comment
             match ignored_line(self.input) {
-                IResult::Done(rest, _) => {
+                Ok((rest, _)) => {
                     self.input = rest;
                     continue;
                 }
@@ -726,7 +726,7 @@ named!(ignored_line<&[u8], ()>, alt!(comment_line | legend));
 
 fn fract_sec_duration(input: &[u8]) -> IResult<&[u8], time::Duration> {
     match fract_sec_tuple(input) {
-        IResult::Done(rest, data) => {
+        Ok((rest, data)) => {
             let (secs, nanos_str) = data;
 
             // only read up to 9 digits since we can only support nanos, not smaller precision
@@ -742,15 +742,14 @@ fn fract_sec_duration(input: &[u8]) -> IResult<&[u8], time::Duration> {
             };
 
             if let Ok(nanos) = nanos_parse_res {
-                return IResult::Done(rest, time::Duration::new(secs, nanos));
+                return Ok((rest, time::Duration::new(secs, nanos)));
             }
 
             // nanos were invalid utf8. We don't expose these errors, so don't bother defining a
             // custom error type.
-            return IResult::Error(ErrorKind::Custom(0));
+            return Err(Err::Error(Context::Code(rest, ErrorKind::Custom(0))));
         }
-        IResult::Error(e) => return IResult::Error(e),
-        IResult::Incomplete(n) => return IResult::Incomplete(n),
+        Err(e) => return Err(e),
     }
 }
 
